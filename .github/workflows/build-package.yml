@@ -17,6 +17,7 @@ concurrency:
 
 jobs:
   BUILD_BASE_IMAGE:
+    if: ${{ github.repository == 'goharbor/harbor' }}
     runs-on: cncf-ubuntu-16-64-x86
     permissions:
       contents: read
@@ -62,6 +63,7 @@ jobs:
           docker logout
 
   BUILD_PACKAGE:
+    if: ${{ github.repository == 'goharbor/harbor' }}
     needs: [BUILD_BASE_IMAGE]
     permissions:
       contents: read
