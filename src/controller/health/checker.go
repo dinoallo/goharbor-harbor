@@ -38,8 +38,8 @@ import (
 // returned matches the expected one
 func HTTPStatusCodeHealthChecker(method string, url string, header http.Header,
 	timeout time.Duration, statusCode int) health.Checker {
-	return health.CheckFunc(func() error {
-		req, err := http.NewRequest(method, url, nil)
+	return health.CheckFunc(func(ctx context.Context) error {
+		req, err := http.NewRequestWithContext(ctx, method, url, nil)
 		if err != nil {
 			return fmt.Errorf("failed to create request: %v", err)
 		}
@@ -75,7 +75,7 @@ type updater struct {
 	status error
 }
 
-func (u *updater) Check() error {
+func (u *updater) Check(context.Context) error {
 	u.Lock()
 	defer u.Unlock()
 
@@ -99,8 +99,9 @@ func PeriodicHealthChecker(checker health.Checker, period time.Duration) health.
 
 	go func() {
 		ticker := time.NewTicker(period)
+		defer ticker.Stop()
 		for {
-			u.update(checker.Check())
+			u.update(checker.Check(context.Background()))
 			<-ticker.C
 		}
 	}()
@@ -109,7 +110,7 @@ func PeriodicHealthChecker(checker health.Checker, period time.Duration) health.
 }
 
 func coreHealthChecker() health.Checker {
-	return health.CheckFunc(func() error {
+	return health.CheckFunc(func(context.Context) error {
 		return nil
 	})
 }
@@ -148,7 +149,7 @@ func registryCtlHealthChecker() health.Checker {
 
 func databaseHealthChecker() health.Checker {
 	period := 10 * time.Second
-	checker := health.CheckFunc(func() error {
+	checker := health.CheckFunc(func(context.Context) error {
 		_, err := orm.NewOrm().Raw("SELECT 1").Exec()
 		if err != nil {
 			return fmt.Errorf("failed to run SQL \"SELECT 1\": %v", err)
@@ -160,8 +161,8 @@ func databaseHealthChecker() health.Checker {
 
 func redisHealthChecker() health.Checker {
 	period := 10 * time.Second
-	checker := health.CheckFunc(func() error {
-		return cache.Default().Ping(context.TODO())
+	checker := health.CheckFunc(func(ctx context.Context) error {
+		return cache.Default().Ping(ctx)
 	})
 	return PeriodicHealthChecker(checker, period)
 }

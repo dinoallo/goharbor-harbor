@@ -15,6 +15,7 @@
 package health
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"testing"
@@ -35,9 +36,9 @@ func TestStringOfHealthy(t *testing.T) {
 
 func TestUpdater(t *testing.T) {
 	updater := &updater{}
-	assert.Equal(t, nil, updater.Check())
+	assert.Equal(t, nil, updater.Check(context.Background()))
 	updater.status = errors.New("unhealthy")
-	assert.Equal(t, "unhealthy", updater.Check().Error())
+	assert.Equal(t, "unhealthy", updater.Check(context.Background()).Error())
 }
 
 func TestHTTPStatusCodeHealthChecker(t *testing.T) {
@@ -56,16 +57,16 @@ func TestHTTPStatusCodeHealthChecker(t *testing.T) {
 		http.MethodGet, url, map[string][]string{
 			"key": {"value"},
 		}, 5*time.Second, http.StatusOK)
-	assert.Equal(t, nil, checker.Check())
+	assert.Equal(t, nil, checker.Check(context.Background()))
 
 	checker = HTTPStatusCodeHealthChecker(
 		http.MethodGet, url, nil, 5*time.Second, http.StatusUnauthorized)
-	assert.NotEqual(t, nil, checker.Check())
+	assert.NotEqual(t, nil, checker.Check(context.Background()))
 }
 
 func TestPeriodicHealthChecker(t *testing.T) {
 	firstCheck := true
-	checkFunc := func() error {
+	checkFunc := func(context.Context) error {
 		time.Sleep(2 * time.Second)
 		if firstCheck {
 			firstCheck = false
@@ -75,14 +76,14 @@ func TestPeriodicHealthChecker(t *testing.T) {
 	}
 
 	checker := PeriodicHealthChecker(health.CheckFunc(checkFunc), 1*time.Second)
-	assert.Equal(t, "unknown status", checker.Check().Error())
+	assert.Equal(t, "unknown status", checker.Check(context.Background()).Error())
 	time.Sleep(3 * time.Second)
-	assert.Equal(t, nil, checker.Check())
+	assert.Equal(t, nil, checker.Check(context.Background()))
 	time.Sleep(3 * time.Second)
-	assert.Equal(t, "unhealthy", checker.Check().Error())
+	assert.Equal(t, "unhealthy", checker.Check(context.Background()).Error())
 }
 
 func TestCoreHealthChecker(t *testing.T) {
 	checker := coreHealthChecker()
-	assert.Equal(t, nil, checker.Check())
+	assert.Equal(t, nil, checker.Check(context.Background()))
 }

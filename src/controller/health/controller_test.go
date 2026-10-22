@@ -15,6 +15,7 @@
 package health
 
 import (
+	"context"
 	"testing"
 
 	"github.com/distribution/distribution/v3/health"
@@ -24,7 +25,7 @@ import (
 )
 
 func fakeHealthChecker(healthy bool) health.Checker {
-	return health.CheckFunc(func() error {
+	return health.CheckFunc(func(context.Context) error {
 		if healthy {
 			return nil
 		}
@@ -39,13 +40,13 @@ func TestCheckHealth(t *testing.T) {
 	registry = map[string]health.Checker{}
 	registry["component01"] = fakeHealthChecker(true)
 	registry["component02"] = fakeHealthChecker(true)
-	status := ctl.GetHealth(nil)
+	status := ctl.GetHealth(context.Background())
 	assert.Equal(t, "healthy", status.Status)
 
 	// component01: healthy, component02: unhealthy => status: unhealthy
 	registry = map[string]health.Checker{}
 	registry["component01"] = fakeHealthChecker(true)
 	registry["component02"] = fakeHealthChecker(false)
-	status = ctl.GetHealth(nil)
+	status = ctl.GetHealth(context.Background())
 	assert.Equal(t, "unhealthy", status.Status)
 }

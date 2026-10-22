@@ -41,12 +41,15 @@ type Controller interface {
 
 type controller struct{}
 
-func (c *controller) GetHealth(_ context.Context) *OverallHealthStatus {
+func (c *controller) GetHealth(ctx context.Context) *OverallHealthStatus {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	var isHealthy healthy = true
 	components := []*ComponentHealthStatus{}
 	ch := make(chan *ComponentHealthStatus, len(registry))
 	for name, checker := range registry {
-		go check(name, checker, timeout, ch)
+		go check(name, checker, timeout, ctx, ch)
 	}
 	for range len(registry) {
 		componentStatus := <-ch
@@ -65,10 +68,12 @@ func (c *controller) GetHealth(_ context.Context) *OverallHealthStatus {
 }
 
 func check(name string, checker health.Checker,
-	timeout time.Duration, c chan *ComponentHealthStatus) {
-	statusChan := make(chan *ComponentHealthStatus)
+	timeout time.Duration, ctx context.Context, c chan *ComponentHealthStatus) {
+	checkCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	statusChan := make(chan *ComponentHealthStatus, 1)
 	go func() {
-		err := checker.Check()
+		err := checker.Check(checkCtx)
 		var healthy healthy = err == nil
 		status := &ComponentHealthStatus{
 			Name:   name,
@@ -83,7 +88,7 @@ func check(name string, checker health.Checker,
 	select {
 	case status := <-statusChan:
 		c <- status
-	case <-time.After(timeout):
+	case <-checkCtx.Done():
 		var healthy healthy = false
 		c <- &ComponentHealthStatus{
 			Name:   name,
