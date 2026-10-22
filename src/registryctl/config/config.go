@@ -15,6 +15,7 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -78,7 +79,7 @@ func (c *Configuration) setStorageDriver() error {
 	if err != nil {
 		return fmt.Errorf("error parsing registry configuration %s: %v", c.RegistryConfig, err)
 	}
-	storageDriver, err := factory.Create(rConf.Storage.Type(), rConf.Storage.Parameters())
+	storageDriver, err := factory.Create(context.Background(), rConf.Storage.Type(), rConf.Storage.Parameters())
 	if err != nil {
 		return err
 	}

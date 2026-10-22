@@ -23,18 +23,13 @@ import (
 	"github.com/distribution/distribution/v3/registry/storage"
 	"github.com/distribution/distribution/v3/registry/storage/driver"
 	"github.com/distribution/reference"
-	"github.com/docker/libtrust"
 	"github.com/opencontainers/go-digest"
 )
 
 // CreateRegistry ...
 func CreateRegistry(t *testing.T, driver driver.StorageDriver, options ...storage.RegistryOption) distribution.Namespace {
 	ctx := context.Background()
-	k, err := libtrust.GenerateECP256PrivateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-	options = append([]storage.RegistryOption{storage.EnableDelete, storage.Schema1SigningKey(k), storage.EnableSchema1}, options...)
+	options = append([]storage.RegistryOption{storage.EnableDelete}, options...)
 	registry, err := storage.NewRegistry(ctx, driver, options...)
 	if err != nil {
 		t.Fatalf("Failed to construct namespace")
