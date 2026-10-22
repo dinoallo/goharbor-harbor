@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/distribution/health"
+	"github.com/distribution/distribution/v3/health"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/goharbor/harbor/src/common/utils/test"

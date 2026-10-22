@@ -1,0 +1,143 @@
+diff --git a/configuration/configuration.go b/configuration/configuration.go
+--- a/configuration/configuration.go
++++ b/configuration/configuration.go
+@@ -864,5 +864,8 @@ type Redis struct {
+ 	// If specified, these settings will enable encryption and authentication via TLS.
+ 	TLS RedisTLSOptions `yaml:"tls,omitempty"`
++
++	// EnableTLS enables TLS for Harbor's legacy redis configuration format.
++	EnableTLS bool `yaml:"enableTLS,omitempty"`
+ }
+ 
+ func (c Redis) MarshalYAML() (interface{}, error) {
+@@ -888,6 +892,9 @@ func (c Redis) MarshalYAML() (interface{}, error) {
+ 	if c.TLS.Certificate != "" || c.TLS.Key != "" || len(c.TLS.ClientCAs) > 0 {
+ 		fields["tls"] = c.TLS
+ 	}
++	if c.EnableTLS {
++		fields["enabletls"] = true
++	}
+ 
+ 	return fields, nil
+ }
+@@ -931,7 +939,108 @@ func (c *Redis) UnmarshalYAML(unmarshal func(interface{}) error) error {
+ 		}
+ 	}
+ 
++	// Harbor 2.x used the redigo configuration shape. Translate its fields to
++	// the go-redis options used by Distribution v3.
++	if addr, ok := redisField(fields, "addr"); ok {
++		addr, ok := addr.(string)
++		if !ok {
++			return fmt.Errorf("invalid redis addr value")
++		}
++		for _, item := range strings.Split(addr, ",") {
++			if item = strings.TrimSpace(item); item != "" {
++				c.Options.Addrs = append(c.Options.Addrs, item)
++			}
++		}
++	}
++	if masterName, ok := redisField(fields, "sentinelMasterSet"); ok {
++		masterName, ok := masterName.(string)
++		if !ok {
++			return fmt.Errorf("invalid redis sentinel master set value")
++		}
++		c.Options.MasterName = masterName
++	}
++	if enableTLS, ok := redisField(fields, "enableTLS"); ok {
++		var err error
++		c.EnableTLS, err = redisBool(enableTLS)
++		if err != nil {
++			return err
++		}
++	}
++	if pool, ok := redisField(fields, "pool"); ok {
++		poolFields, ok := redisMap(pool)
++		if !ok {
++			return fmt.Errorf("invalid redis pool data structure")
++		}
++		for name, option := range map[string]string{
++			"maxidle":     "MaxIdleConns",
++			"maxactive":   "PoolSize",
++			"idletimeout": "ConnMaxIdleTime",
++		} {
++			if value, ok := redisField(poolFields, name); ok {
++				field := reflect.ValueOf(&c.Options).Elem().FieldByName(option)
++				if err := setRedisOption(field, value); err != nil {
++					return fmt.Errorf("invalid redis pool field %s: %w", name, err)
++				}
++			}
++		}
++	}
++
+ 	return nil
+ }
+ 
++func redisField(fields map[string]interface{}, name string) (interface{}, bool) {
++	for key, value := range fields {
++		if strings.EqualFold(key, name) {
++			return value, true
++		}
++	}
++	return nil, false
++}
++
++func redisMap(value interface{}) (map[string]interface{}, bool) {
++	if fields, ok := value.(map[string]interface{}); ok {
++		return fields, true
++	}
++	fields, ok := value.(map[interface{}]interface{})
++	if !ok {
++		return nil, false
++	}
++	result := make(map[string]interface{}, len(fields))
++	for key, value := range fields {
++		name, ok := key.(string)
++		if !ok {
++			return nil, false
++		}
++		result[name] = value
++	}
++	return result, true
++}
++
++func redisBool(value interface{}) (bool, error) {
++	result, ok := value.(bool)
++	if !ok {
++		return false, fmt.Errorf("invalid redis enableTLS value")
++	}
++	return result, nil
++}
++
++func setRedisOption(field reflect.Value, value interface{}) error {
++	if !field.IsValid() || !field.CanSet() {
++		return fmt.Errorf("unknown redis option")
++	}
++	if field.Type() == reflect.TypeOf(time.Duration(0)) {
++		duration, ok := value.(string)
++		if !ok {
++			return fmt.Errorf("duration must be a string")
++		}
++		parsed, err := time.ParseDuration(duration)
++		if err != nil {
++			return err
++		}
++		field.Set(reflect.ValueOf(parsed))
++		return nil
++	}
++	return setFieldValue(field, value)
++}
++
+ func setFieldValue(field reflect.Value, value interface{}) error {
+diff --git a/registry/handlers/app.go b/registry/handlers/app.go
+--- a/registry/handlers/app.go
++++ b/registry/handlers/app.go
+@@ -534,5 +534,8 @@ func (app *App) configureRedis(cfg *configuration.Configuration) {
+ 		dcontext.GetLogger(app).Infof("redis not configured")
+ 		return
+ 	}
++	if cfg.Redis.EnableTLS && cfg.Redis.Options.TLSConfig == nil {
++		cfg.Redis.Options.TLSConfig = &tls.Config{}
++	}
+ 
+ 	// redis TLS config

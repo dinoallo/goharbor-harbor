@@ -16,6 +16,7 @@ VERSION="$1"
 DISTRIBUTION_SRC="$2"
 GOBUILDIMAGE="$3"
 DOCKERNETWORK="$4"
+REGISTRY_PATCH="$5"
 
 set -e
 
@@ -30,6 +31,11 @@ cur=$PWD
 TEMP=`mktemp -d ${TMPDIR-/tmp}/distribution.XXXXXX`
 git clone -b $VERSION $DISTRIBUTION_SRC $TEMP
 
+cd "$TEMP"
+if [ -n "$REGISTRY_PATCH" ]; then
+  git apply "$cur/$REGISTRY_PATCH"
+fi
+
 cd $cur
 
 echo 'build the registry binary ...'
@@ -38,7 +44,7 @@ docker build --network=$DOCKERNETWORK --build-arg golang_image=$GOBUILDIMAGE -f 
 
 echo 'copy the registry binary to local...'
 ID=$(docker create registry-golang-legacy)
-docker cp $ID:/go/src/github.com/docker/distribution/bin/registry binary/registry
+docker cp $ID:/registry binary/registry
 
 docker rm -f $ID
 docker rmi -f registry-golang-legacy

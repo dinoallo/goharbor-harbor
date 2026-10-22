@@ -123,16 +123,19 @@ PKGVERSIONTAG=dev-legacy
 
 PREPARE_VERSION_NAME=versions
 
-#versions
-REGISTRYVERSION=v2.8.3-patch-redis
+# versions
+# Distribution v3 is built with the Harbor Redis compatibility patch below.
+REGISTRYVERSION=v3.0.0-patch-redis
 TRIVYVERSION=v0.72.0
 TRIVYADAPTERVERSION=v0.38.0
 NODEBUILDIMAGE=node:22.22.3
 
 # version of registry for pulling the source code
-REGISTRY_SRC_TAG=v2.8.3-harbor.1
+REGISTRY_SRC_TAG=v3.0.0
 # source of upstream distribution code
-DISTRIBUTION_SRC=https://github.com/goharbor/distribution.git
+DISTRIBUTION_SRC=https://github.com/distribution/distribution.git
+# Harbor compatibility patch applied to the Distribution v3 source.
+REGISTRY_PATCH=redis-v3.patch
 
 # dependency binaries
 REGISTRYURL=
@@ -416,7 +419,7 @@ build:
 		exit 1; \
 	fi
 	make -f $(MAKEFILEPATH_PHOTON)/Makefile $(BUILDTARGET) -e DEVFLAG=$(DEVFLAG) -e GOBUILDIMAGE=$(GOBUILDIMAGE) -e NODEBUILDIMAGE=$(NODEBUILDIMAGE) \
-	 -e REGISTRYVERSION=$(REGISTRYVERSION) -e REGISTRY_SRC_TAG=$(REGISTRY_SRC_TAG)  -e DISTRIBUTION_SRC=$(DISTRIBUTION_SRC)\
+	 -e REGISTRYVERSION=$(REGISTRYVERSION) -e REGISTRY_SRC_TAG=$(REGISTRY_SRC_TAG)  -e DISTRIBUTION_SRC=$(DISTRIBUTION_SRC) -e REGISTRY_PATCH=$(REGISTRY_PATCH)\
 	 -e TRIVYVERSION=$(TRIVYVERSION) -e TRIVYADAPTERVERSION=$(TRIVYADAPTERVERSION) \
 	 -e VERSIONTAG=$(VERSIONTAG) \
 	 -e DOCKERNETWORK=$(DOCKERNETWORK) \
