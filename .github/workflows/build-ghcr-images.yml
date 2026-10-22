@@ -1,0 +1,133 @@
+name: Build and Push Harbor Images to GHCR
+
+on:
+  push:
+    branches:
+      - main
+      - release-*
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+concurrency:
+  group: harbor-ghcr-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  BUILD_AND_PUSH:
+    if: ${{ github.repository != 'goharbor/harbor' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      BUILD_PACKAGE: true
+    steps:
+      - name: Set up Go 1.23
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.23.2
+
+      - name: Setup Docker
+        uses: docker-practice/actions-setup-docker@master
+        with:
+          docker_version: 20.10
+          docker_channel: stable
+
+      - name: Checkout Harbor
+        uses: actions/checkout@v6
+        with:
+          path: src/github.com/goharbor/harbor
+
+      - name: Build Harbor images
+        working-directory: src/github.com/goharbor/harbor
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          set -euo pipefail
+
+          version="$(cat VERSION)"
+          case "$REF_TYPE:$REF_NAME" in
+            branch:main)
+              image_build_tag="${version}-build.${GITHUB_RUN_NUMBER}"
+              image_publish_tag="dev-legacy"
+              ;;
+            branch:release-*)
+              image_build_tag="$version"
+              image_publish_tag="${version}-dev"
+              ;;
+            tag:v*)
+              image_build_tag="$version"
+              image_publish_tag="$REF_NAME"
+              ;;
+            *)
+              image_build_tag="${version}-build.${GITHUB_RUN_NUMBER}"
+              image_publish_tag="dev-legacy"
+              ;;
+          esac
+
+          echo "IMAGE_BUILD_TAG=$image_build_tag" >> "$GITHUB_ENV"
+          echo "IMAGE_PUBLISH_TAG=$image_publish_tag" >> "$GITHUB_ENV"
+
+          # Keep the repository's local image names unchanged. Only the publish
+          # step retags the completed Harbor images for GHCR.
+          docker build -f make/photon/common/Dockerfile -t goharbor/photon:5.0-legacy .
+
+          # Build all runtime images, including registry and registryctl, but
+          # never push Harbor base images to Docker Hub.
+          sudo make compile build \
+            GOBUILDTAGS="include_oss include_gcs" \
+            BASEIMAGETAG=dev-legacy \
+            VERSIONTAG="$image_build_tag" \
+            TRIVYFLAG=true \
+            EXPORTERFLAG=true \
+            BUILDREG=true \
+            BUILDTRIVYADP=true \
+            BUILD_INSTALLER=true \
+            BUILD_BASE=true \
+            PUSHBASEIMAGE=false \
+            PULL_BASE_FROM_DOCKERHUB=false \
+            HTTPPROXY=
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push Harbor images to GHCR
+        working-directory: src/github.com/goharbor/harbor
+        env:
+          GHCR_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+
+          ghcr_owner="${GHCR_OWNER,,}"
+          mapfile -t source_images < <(
+            docker images --format '{{.Repository}}:{{.Tag}}' |
+              while IFS= read -r image; do
+                repository="${image%:*}"
+                tag="${image##*:}"
+                if [[ "$repository" == goharbor/* && "$repository" != *-base && "$tag" == "$IMAGE_BUILD_TAG" ]]; then
+                  printf '%s\n' "$image"
+                fi
+              done | sort -u
+          )
+
+          if (( ${#source_images[@]} == 0 )); then
+            echo "No Harbor runtime images found for tag $IMAGE_BUILD_TAG" >&2
+            exit 1
+          fi
+
+          for source_image in "${source_images[@]}"; do
+            source_repository="${source_image%:*}"
+            image_name="${source_repository#goharbor/}"
+            target_image="ghcr.io/${ghcr_owner}/${image_name}:${IMAGE_PUBLISH_TAG}"
+            echo "Pushing $source_image as $target_image"
+            docker tag "$source_image" "$target_image"
+            docker push "$target_image"
+          done
